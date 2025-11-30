@@ -1,0 +1,81 @@
+name: CI/CD - Build, Test, Publish (using container images)
+
+on:
+  workflow_dispatch:
+    inputs:
+      python-version:
+        description: 'Comma-separated Python versions to run (e.g. "3.10,3.11")'
+        required: false
+        default: '3.10,3.11'
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Python versions list (require `python-versions.json`)
+        id: prepare
+        run: |
+          if [ ! -f python-versions.json ]; then
+            echo 'ERROR: python-versions.json not found. This workflow requires the file to specify Python versions.'
+            exit 1
+          fi
+          VERSIONS=$(python3 -c "import json,sys; print(','.join(json.load(open('python-versions.json'))))")
+          VERSIONS=$(echo "$VERSIONS" | tr -d ' ')
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+
+      - name: Run tests inside chosen Python container images
+        run: |
+          IFS=',' read -ra VERS <<< "${{ steps.prepare.outputs.versions }}"
+          for v in "${VERS[@]}"; do
+            echo "==> Running tests with Python $v"
+            docker run --rm -v "${{ github.workspace }}:/src" -w /src python:${v}-slim bash -lc "python -m pip install --upgrade pip; if [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if [ -f pytest.ini ] || [ -d tests ] || ls | grep -E 'test_|tests' >/dev/null 2>&1; then pytest -q; else echo 'No tests found — skipping pytest for $v'; fi"
+          done
+        shell: bash
+
+  publish-image:
+    name: Publish re-tagged image to GHCR
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Prepare versions (require `python-versions.json`)
+        id: prepare-publish
+        run: |
+          if [ ! -f python-versions.json ]; then
+            echo 'ERROR: python-versions.json not found. This workflow requires the file to specify Python versions.'
+            exit 1
+          fi
+          VERSIONS=$(python3 -c "import json,sys; print(','.join(json.load(open('python-versions.json'))))")
+          VERSIONS=$(echo "$VERSIONS" | tr -d ' ')
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+
+      - name: Pull, tag and push images to GHCR
+        run: |
+          IFS=',' read -ra VERS <<< "${{ steps.prepare-publish.outputs.versions }}"
+          for v in "${VERS[@]}"; do
+            IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:py${v}
+            echo "Tagging python:${v}-slim -> $IMAGE"
+            docker pull python:${v}-slim
+            docker tag python:${v}-slim $IMAGE
+            docker push $IMAGE
+          done
+        shell: bash
