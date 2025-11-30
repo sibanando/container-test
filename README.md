@@ -1,6 +1,6 @@
 # Container Test CI/CD Workflow
 
-This repository uses a GitHub Actions CI/CD workflow that dynamically builds, tests, and publishes Python container images using official Python images from Docker Hub.
+This repository uses a GitHub Actions CI/CD workflow that dynamically builds, tests, and publishes Python container images using official Python images from GitHub Container Registry (GHCR).
 
 ## Overview
 
@@ -99,11 +99,11 @@ To test locally with the same Python versions:
 
 ```bash
 # Test with Python 3.10
-docker run --rm -v $(pwd):/src -w /src python:3.10-slim bash -c \
+docker run --rm -v $(pwd):/src -w /src ghcr.io/library/python:3.10-slim bash -c \
   "pip install -r requirements.txt && pytest"
 
 # Test with Python 3.11
-docker run --rm -v $(pwd):/src -w /src python:3.11-slim bash -c \
+docker run --rm -v $(pwd):/src -w /src ghcr.io/library/python:3.11-slim bash -c \
   "pip install -r requirements.txt && pytest"
 ```
 
@@ -118,7 +118,7 @@ pytest
 
 - **File**: `.github/workflows/ci.yml`
 - **Name**: "CI/CD - Build, Test, Publish (using container images)"
-- **Base Images**: Official Python images from Docker Hub (`python:<version>-slim`)
+- **Base Images**: Official Python images from GHCR (`ghcr.io/library/python:<version>-slim`)
 - **Container Registry**: GitHub Container Registry (GHCR)
 
 ## Troubleshooting
